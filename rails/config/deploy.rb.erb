@@ -1,0 +1,184 @@
+# config valid for current version and patch releases of Capistrano
+lock "~> 3.11"
+
+set :user, :"<%= deploy_user %>"
+set :application, "<%= app_name %>"
+set :repo_url, "<%= repo_url %>"
+
+set :linked_files, %w{config/master.key}
+set :linked_dirs, %w(tmp/pids tmp/sockets log)
+
+set :stages, %w(production staging local)
+set :default_stage, "local"
+
+set :puma_threads, [4, 16]
+set :puma_workers, 0
+
+# Don't change these unless you know what you're doing
+set :pty, true
+set :use_sudo, false
+set :stage, :production
+set :rails_env, "production"
+set :puma_env, "production"
+set :rack_env, "production"
+set :deploy_via, :remote_cache
+set :deploy_to, "/home/#{fetch(:user)}/apps/#{fetch(:application)}"
+set :puma_bind, "unix://#{shared_path}/tmp/sockets/#{fetch(:application)}-puma.sock"
+set :puma_state, "#{shared_path}/tmp/pids/puma.state"
+set :puma_pid, "#{shared_path}/tmp/pids/puma.pid"
+set :puma_access_log, "#{shared_path}/log/puma.error.log"
+set :puma_error_log, "#{shared_path}/log/puma.access.log"
+set :ssh_options, {forward_agent: true, user: fetch(:user), keys: %w(~/.ssh/id_rsa.pub), auth_methods: %w(publickey)}
+set :puma_preload_app, true
+set :puma_worker_timeout, nil
+set :puma_init_active_record, true  # Change to false when not using ActiveRecord
+
+desc "Reload environment variables."
+task :reload_env do
+  on roles(:app) do
+    execute ". /etc/environment"
+  end
+end
+
+task :rspec do
+  run_locally do
+    with rails_env: :development do
+      rspec_result = `bundle exec rspec`
+
+      unless rspec_result.match(/0 failures/)
+        abort "ERROR: Some tests failed.\nFix failing tests before deploying."
+      end
+    end
+  end
+end
+
+namespace :puma do
+  desc "Create Directories for Puma Pids and Socket"
+  task :make_dirs do
+    on roles(:app) do
+      execute "mkdir #{shared_path}/tmp/sockets -p"
+      execute "mkdir #{shared_path}/tmp/pids -p"
+    end
+  end
+
+  before :start, :make_dirs
+end
+
+namespace :deploy do
+  task :copy_master_key do
+    on release_roles :app do |role|
+      execute "mkdir", "-p /home/<%= deploy_user %>/apps/<%= app_name %>/shared/config"
+      upload! "config/master.key", "/home/<%= deploy_user %>/apps/<%= app_name %>/shared/config/master.key"
+    end
+  end
+
+  desc "Make sure local git is in sync with remote."
+  task :check_revision do
+    on roles(:app) do
+      unless `git rev-parse HEAD` == `git rev-parse origin/master`
+        puts "WARNING: HEAD is not the same as origin/master"
+        puts "Run `git push` to sync changes. If you're deploying a branch other than master, ignore this."
+        #exit
+      end
+    end
+  end
+
+  desc "Initial Deploy"
+  task :initial do
+    on roles(:app) do
+      before "deploy:restart", "puma:start"
+      invoke "deploy"
+    end
+  end
+
+  desc "deploy app for the first time (expects pre-created but empty DB)"
+  task :cold do
+    before "deploy:migrate", "deploy:initdb"
+    invoke "deploy"
+  end
+
+  desc "initialize a brand-new database (db:schema:load, db:seed)"
+  task :initdb do
+    on primary :web do |host|
+      within release_path do
+        # execute :rake, "db:create"
+        execute :rake, "db:schema:load"
+        execute :rake, "db:seed"
+      end
+    end
+  end
+
+  task :load_schema do
+    on roles(:app) do
+      run "cd #{current_path} && RAILS_ENV=production bundle exec rake db:schema:load"
+    end
+  end
+
+  desc "Restart application"
+  task :restart do
+    on roles(:app), in: :sequence, wait: 5 do
+      sleep 10
+      Rake::Task["puma:restart"].reenable
+      invoke "puma:restart"
+      sleep 5
+      invoke "nginx:restart"
+      sleep 5
+      Rake::Task["puma:restart"].reenable
+    end
+  end
+
+  desc "Invoke rake task on the server"
+  task :invoke do
+    fail "no task provided" unless ENV["task"]
+
+    on roles(:app) do
+      within release_path do
+        with rails_env: fetch(:rails_env) do
+          execute :rake, ENV["task"]
+        end
+      end
+    end
+  end
+
+  desc "Update crontab with whenever"
+  task :update_cron do
+    on roles(:app) do
+      within current_path do
+        execute :bundle, :exec, "whenever --update-crontab #{fetch(:application)}"
+      end
+    end
+  end
+
+  # Make sure your unit tests pass before deployment.
+  # before :starting,     :rspec
+
+  before :finishing, :reload_env
+  before :starting, :check_revision
+  after :finishing, :compile_assets
+  after :finishing, :cleanup
+  after "deploy:published", :restart
+
+  # Rails does not have a great solution for managing the master.key file
+  # for deployment, so I just copy it over every deploy.
+  before "deploy:check:linked_files", "deploy:copy_master_key"
+
+  # Asset compilation always takes the longest time, so I like to have
+  # the migrations happen first.
+  before "deploy:assets:precompile", "deploy:migrate"
+
+  # Uncomment this if you've included whenever to update the cron jobs after every deploy:
+  # after   :finishing,     'deploy:update_cron'
+end
+
+namespace :rake do
+  desc "Invoke rake task"
+  task :invoke do
+    on roles(:app) do
+      within "#{current_path}" do
+        with rails_env: :production do
+          execute :rake, ENV["task"]
+        end
+      end
+    end
+  end
+end

@@ -1,0 +1,168 @@
+#!/bin/bash
+
+#
+# ────────────────────────────────────────────────────────────────────────────────────  ──────────
+#   :::::: H O W   T O   U S E   T H I S   S C R I P T : :  :   :    :     :        :          :
+# ──────────────────────────────────────────────────────────────────────────────────────────────
+#
+
+# This is the script that is run as the deploy user. This script is responsible
+# for setting up ruby and bundler.
+#
+# To use this script, either call it directly with the -h option to see how to
+# use it, or just call the root.sh script instead (it will call this one).
+#
+# This script is intended to be a starting place for a provision script. I know
+# it is not perfect, but it is not intended to be.
+#
+# Take what you like from this script and replace the rest (or don't use it at all).
+
+
+
+
+# Many thanks to Robert Siemer for his valuable SO answer:
+# https://stackoverflow.com/a/29754866/2990656
+
+# saner programming env: these switches turn some bugs into errors
+set -o pipefail -o noclobber -o nounset
+
+#
+# ──────────────────────────────────────────────────────────────────── I ──────────
+#   :::::: D E F A U L T   V A L U E S : :  :   :    :     :        :          :
+# ──────────────────────────────────────────────────────────────────────────────
+#
+
+VERSION="<%= VERSION %>"
+DEPLOY_USER="<%= deploy_user %>"
+RUBY_VERSION="<%= ruby_version %>"
+
+#
+# ──────────────────────────────────────────────────────────────────────── II ──────────
+#   :::::: H E L P E R   F U N C T I O N S : :  :   :    :     :        :          :
+# ──────────────────────────────────────────────────────────────────────────────────
+#
+
+
+show_help() {
+cat << EOF
+Usage: $0 [options...][-h|--help][-v|--version]
+
+With no options given, the defaults used by this provision script are:
+
+  Deploy User.............. ${DEPLOY_USER}
+  Ruby Version............. ${RUBY_VERSION}
+
+These can be set with:
+
+  -u, --deploy-user
+  -r, --ruby-version
+
+EOF
+}
+
+show_version() {
+  echo "$0 Version ${VERSION}"
+}
+
+# Outputs a nice, centered, bright cyan banner.
+banner_color="1;36"
+banner() {
+  local terminal_width="$(tput cols)"
+  local padding="$(printf '%0.1s' ={1..500})"
+  printf '\e[%sm%*.*s \e[0m%s\e[%sm %*.*s\e[0m\n' "${banner_color}" 0 "$(((terminal_width-2-${#1})/2))" "$padding" "${1^^}" "${banner_color}" 0 "$(((terminal_width-1-${#1})/2))" "$padding"
+}
+
+assert_success() {
+  if [ $? -ne 0 ]; then
+    printf "\n\e[1;31m(failed)\e[0m $1\n"
+    exit 1
+  fi
+}
+
+run_cmd() {
+  printf "\n\e[1;35m(running)\e[0m $*\n"
+  eval "$*"
+  assert_success "$*"
+}
+
+
+#
+# ──────────────────────────────────────────────────────────────────── III ──────────
+#   :::::: O P T I O N   P A R S I N G : :  :   :    :     :        :          :
+# ──────────────────────────────────────────────────────────────────────────────
+#
+
+
+
+OPTIONS=u:r:vh
+LONGOPTS=deploy-user:,ruby-version:,version,help
+
+# -use ! and PIPESTATUS to get exit code with errexit set
+# -temporarily store output to be able to check for errors
+# -activate quoting/enhanced mode (e.g. by writing out “--options”)
+# -pass arguments only via   -- "$@"   to separate them correctly
+! PARSED=$(getopt --options=$OPTIONS --longoptions=$LONGOPTS --name "$0" -- "$@")
+if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+    # e.g. return value is 1
+    #  then getopt has complained about wrong arguments to stdout
+    exit 2
+fi
+# read getopt’s output this way to handle the quoting right:
+eval set -- "$PARSED"
+
+d=n f=n v=n outFile=-
+# now enjoy the options in order and nicely split until we see --
+while true; do
+    case "$1" in
+        -u|--deploy-user)
+          DEPLOY_USER="$2"
+          shift 2
+          ;;
+        -r|--ruby-version)
+          RUBY_VERSION="$2"
+          shift 2
+          ;;
+        -v|--version)
+          show_version
+          exit 0
+          ;;
+        -h|--help)
+          show_help
+          exit 0
+          ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Programming error"
+            exit 3
+            ;;
+    esac
+done
+
+
+#
+# ──────────────────────────────────────────────────────────────── IV ──────────
+#   :::::: I N S T A L L   R U B Y : :  :   :    :     :        :          :
+# ──────────────────────────────────────────────────────────────────────────
+#
+
+[ -d ~/.rbenv ] || run_cmd git clone https://github.com/rbenv/rbenv.git ~/.rbenv
+grep "#rbenv-path" ~/.bashrc || run_cmd "echo 'export PATH=\"\$HOME/.rbenv/bin:\$PATH\" #rbenv-path' >> ~/.bashrc"
+grep "#rbenv-init" ~/.bashrc || run_cmd "echo 'eval \"\$(rbenv init -)\" #rbenv-init' >> ~/.bashrc"
+[ -d ~/.rbenv/plugins/ruby-build ] || run_cmd git clone https://github.com/rbenv/ruby-build.git ~/.rbenv/plugins/ruby-build
+[ -f ~/.gemrc ] || run_cmd 'echo "gem: --no-document" > ~/.gemrc'
+
+PATH="/home/${DEPLOY_USER}/.rbenv/shims:/home/${DEPLOY_USER}/.rbenv/bin:${PATH}"
+eval "$(rbenv init -)"
+
+which ruby || run_cmd rbenv install "${RUBY_VERSION}"
+rbenv global "${RUBY_VERSION}"
+
+ruby -v | grep "${RUBY_VERSION}"
+assert_success "Ruby ${RUBY_VERSION} isn't installed!"
+
+which bundler || run_cmd gem install bundler
+
+rbenv rehash

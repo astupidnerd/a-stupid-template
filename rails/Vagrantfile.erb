@@ -1,0 +1,30 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/bionic64"
+
+  config.vm.network "private_network", ip: "<%= local_server %>"
+
+  # Vagrant runs the provision scripts from the /tmp directory; this is placed there so that
+  # the "root" provision script can find it.
+  config.vm.provision "file", source: "bin/provision/deploy.sh", destination: "/tmp/deploy.sh"
+  config.vm.provision "shell", path: "bin/provision/root.sh", args: "--generate-cert --app-name='<%= app_name %>' --deploy-user='<%= deploy_user %>' --ruby-version='<%= ruby_version %>' --host-name='_'"
+  config.vm.provision "shell", inline: %{
+    rm /tmp/deploy.sh
+    sudo -u deploy createdb <%= local_db_name %>
+  }
+
+  # Copies your public key to the deploy user on the virtual machine so that you can deploy right away!
+  public_key_file = File.join(Dir.home, ".ssh", "id_rsa.pub")
+  if File.exist?(public_key_file)
+    config.vm.provision "file", source: public_key_file, destination: "/tmp/host_public_key"
+    config.vm.provision "shell", inline: %{
+      sudo -u <%= deploy_user %> mkdir -p /home/<%= deploy_user %>/.ssh
+      cat /tmp/host_public_key >> /home/<%= deploy_user %>/.ssh/authorized_keys
+      rm /tmp/host_public_key
+    }
+  end
+
+  # Moves the cloudimg-console.log file to the log dir.
+  config.vm.provider "virtualbox" do |vb|
+    vb.customize ["modifyvm", :id, "--uartmode1", "file", File.join(__dir__, "log", "ubuntu-cloudimg-console.log")]
+  end
+end

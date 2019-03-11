@@ -1,0 +1,13 @@
+
+set :rbenv_type, :user
+set :rbenv_ruby, "<%= ruby_version %>"
+
+set :puma_threads, [4, 16]
+
+set :deploy_to, "/home/<%= deploy_user %>/apps/<%= app_name %>"
+
+set :stage, :local
+set :rails_env, :local
+set :branch, "development"
+
+server "<%= local_server %>", user: "<%= deploy_user %>", roles: %w{app db web local}
