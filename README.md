@@ -36,7 +36,7 @@ This application template starts off your rails project with:
 ## TL;DR
 
 ```bash
-$ rails new <name> -m https://bitbucket.org/stevenjeffries/rails-wazza-template/raw/master/template.rb
+$ rails new <name> -m https://bitbucket.org/stupidnerds/rails-wazza-template/raw/master/template.rb
 ```
 
 ## Installation
@@ -50,7 +50,7 @@ The wazza template will automatically inject your git repo URL into the capistra
 Use this template when creating a new rails app by passing the URL to the template file:
 
 ```bash
-$ rails new <name> -m https://bitbucket.org/stevenjeffries/rails-wazza-template/raw/master/template.rb
+$ rails new <name> -m https://bitbucket.org/stupidnerds/rails-wazza-template/raw/master/template.rb
 ```
 
 You can also clone this repo locally and edit it before using it. The `-m` accepts a path as well:
