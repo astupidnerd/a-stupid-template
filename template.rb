@@ -1,3 +1,5 @@
+require "tmpdir"
+
 ##
 # Wazza template generator.
 #
