@@ -7,15 +7,35 @@
 VERSION = "0.1.0"
 
 #
+# ──────────────────────────────────────────────────────────  ──────────
+#   :::::: B O O T S T R A P : :  :   :    :     :        :          :
+# ────────────────────────────────────────────────────────────────────
+#
+
+# If this is being run from the bitbucket url, then none of the files this template
+# uses will be present, so we need to clone the repo somewhere:
+
+if File.exists?(File.join(__dir__, "rails", "Vagrantfile.erb"))
+  # We are safely inside the repo (probably).
+  def template_root
+    File.expand_path(__dir__)
+  end
+else
+  puts "Downloading required files..."
+  @tmp_dir = Dir.mktmpdir("rails-wazza-template")
+
+  run("git clone https://stevenjeffries@bitbucket.org/stupidnerds/rails-wazza-template.git #{@tmp_dir}")
+
+  def template_root
+    @tmp_dir
+  end
+end
+
+#
 # ──────────────────────────────────────────────────────────────────── I ──────────
 #   :::::: H E L P E R   M E T H O D S : :  :   :    :     :        :          :
 # ──────────────────────────────────────────────────────────────────────────────
 #
-
-# Convenience method to get the root of this template.
-def template_root
-  File.expand_path(__dir__)
-end
 
 # This adds the root of this template as a source path so that it can easily
 # copy over its files into the destination project.
@@ -31,7 +51,7 @@ end
 
 # Convenience method for joining paths relative to the template root.
 def join(*paths)
-  File.expand_path(File.join(__dir__, *paths))
+  File.expand_path(File.join(template_root, *paths))
 end
 
 # Convenience method for evaluating the setup scripts.
@@ -56,3 +76,5 @@ end
 
 # Run each of the scripts in the setup directory.
 setup("config", "files", "gems", "devise", "post_install")
+
+FileUtils.rm_rf(@tmp_dir) if @tmp_dir && File.directory?(@tmp_dir)
