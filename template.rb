@@ -14,7 +14,7 @@ VERSION = "0.1.0"
 # ────────────────────────────────────────────────────────────────────
 #
 
-# If this is being run from the bitbucket url, then none of the files this template
+# If this is being run from the github url, then none of the files this template
 # uses will be present, so we need to clone the repo somewhere:
 
 if File.exists?(File.join(__dir__, "rails", "Vagrantfile.erb"))
@@ -26,7 +26,7 @@ else
   puts "Downloading required files..."
   @tmp_dir = Dir.mktmpdir("rails-wazza-template")
 
-  run("git clone https://stevenjeffries@bitbucket.org/stupidnerds/rails-wazza-template.git #{@tmp_dir}")
+  run("git clone https://github.com/astupidnerd/a-stupid-template #{@tmp_dir}")
 
   def template_root
     @tmp_dir
